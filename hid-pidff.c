@@ -426,8 +426,8 @@ static void pidff_set_effect_report(struct pidff_device *pidff,
 
 	/* FUN FUN */
 	// pidff->set_effect[PID_DIRECTION_ENABLE].value[0] = 1;
-	pidff->set_effect[PID_AXES_ENABLE].value[1] = 0;
-	pidff->set_effect[PID_AXES_ENABLE].value[2] = 0;
+	// pidff->set_effect[PID_AXES_ENABLE].value[1] = 0;
+	// pidff->set_effect[PID_AXES_ENABLE].value[2] = 0;
 
 	hid_hw_request(pidff->hid, pidff->reports[PID_SET_EFFECT],
 			HID_REQ_SET_REPORT);
@@ -1120,7 +1120,8 @@ static struct hid_field *pidff_find_special_field(struct hid_report *report,
  * Fill a pidff->*_id struct table
  */
 static int pidff_find_special_keys(int *keys, struct hid_field *fld,
-				   const u8 *usagetable, int count)
+				   const u8 *usagetable, int count,
+				   unsigned usage_page)
 {
 
 	int i, j;
@@ -1128,7 +1129,7 @@ static int pidff_find_special_keys(int *keys, struct hid_field *fld,
 
 	for (i = 0; i < count; i++) {
 		for (j = 0; j < fld->maxusage; j++) {
-			if (fld->usage[j].hid == (HID_UP_PID | usagetable[i])) {
+			if (fld->usage[j].hid == (usage_page | usagetable[i])) {
 				keys[i] = j + 1;
 				found++;
 				break;
@@ -1140,15 +1141,17 @@ static int pidff_find_special_keys(int *keys, struct hid_field *fld,
 
 #define PIDFF_FIND_SPECIAL_KEYS(keys, field, name) \
 	pidff_find_special_keys(pidff->keys, pidff->field, pidff_ ## name, \
-		sizeof(pidff_ ## name))
+		sizeof(pidff_ ## name), HID_UP_PID)
+
+#define PIDFF_FIND_GENERAL_DESKTOP(keys, field, name) \
+	pidff_find_special_keys(pidff->keys, pidff->field, pidff_ ## name, \
+		sizeof(pidff_ ## name), HID_UP_GENDESK)
 
 /*
  * Find and check the special fields
  */
 static int pidff_find_special_fields(struct pidff_device *pidff)
 {
-	hid_dbg(pidff->hid, "finding special fields\n");
-
 	pidff->create_new_effect_type =
 		pidff_find_special_field(pidff->reports[PID_CREATE_NEW_EFFECT],
 					 PID_EFFECT_TYPE, 1);
@@ -1161,7 +1164,6 @@ static int pidff_find_special_fields(struct pidff_device *pidff)
 	pidff->axes_enable =
 		pidff_find_special_field(pidff->reports[PID_SET_EFFECT],
 					 PID_AXES_ENABLE, 0);
-
 	pidff->device_control =
 		pidff_find_special_field(pidff->reports[PID_DEVICE_CONTROL],
 			PID_DEVICE_CONTROL_ARRAY,
@@ -1174,7 +1176,6 @@ static int pidff_find_special_fields(struct pidff_device *pidff)
 		pidff_find_special_field(pidff->reports[PID_EFFECT_OPERATION],
 					 PID_EFFECT_OPERATION_ARRAY, 1);
 
-	hid_dbg(pidff->hid, "search done\n");
 
 	if (!pidff->create_new_effect_type || !pidff->set_effect_type) {
 		hid_err(pidff->hid, "effect lists not found\n");
@@ -1203,15 +1204,32 @@ static int pidff_find_special_fields(struct pidff_device *pidff)
 
 	PIDFF_FIND_SPECIAL_KEYS(control_id, device_control, device_control);
 
-	int i;
-	uint found_axes = PIDFF_FIND_SPECIAL_KEYS(direction_axis_id,
-						  axes_enable, direction_axis);
+	if (pidff->axes_enable) {
+		hid_dbg(pidff->hid, "=============================");
+		hid_dbg(pidff->hid, " ");
+		hid_dbg(pidff->hid, "Axes enable min: %d", pidff->axes_enable->logical_minimum);
+		hid_dbg(pidff->hid, "Axes enable max: %d", pidff->axes_enable->logical_maximum);
+		hid_dbg(pidff->hid, "Axes enable size: %d", pidff->axes_enable->report_size);
+		hid_dbg(pidff->hid, "Axes enable count: %d", pidff->axes_enable->report_count);
+		hid_dbg(pidff->hid, "Axes enable max usage: %d", pidff->axes_enable->maxusage);
+		hid_dbg(pidff->hid, " ");
+		hid_dbg(pidff->hid, "=============================");
+		hid_dbg(pidff->hid, " ");
 
-	hid_dbg(pidff->hid, "Found direction axes: %d", found_axes);
+		int i;
+		uint found_axes = PIDFF_FIND_GENERAL_DESKTOP(direction_axis_id,
+					axes_enable, direction_axis);
 
-	for (i = 0; i < sizeof(pidff_direction_axis); i++) {
-		hid_dbg(pidff->hid, "Axis %d, id: %d", i+1, pidff->direction_axis_id[i]);
+		for (i = 0; i < sizeof(pidff_direction_axis); i++) {
+			hid_dbg(pidff->hid, "Axis %d, usage: %x", i+1, pidff_direction_axis[i]);
+			hid_dbg(pidff->hid, "Axis %d, index: %d", i+1, pidff->direction_axis_id[i]);
+		}
+
+		hid_dbg(pidff->hid, "Found direction axes: %d", found_axes);
+		hid_dbg(pidff->hid, " ");
+		hid_dbg(pidff->hid, "=============================");
 	}
+
 
 	if (!PIDFF_FIND_SPECIAL_KEYS(type_id, create_new_effect_type,
 				     effect_types)) {
