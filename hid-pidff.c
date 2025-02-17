@@ -151,6 +151,7 @@ static const u8 pidff_effect_operation_status[] = { 0x79, 0x7b };
 /* Polar direction 90 degrees (North) */
 #define PIDFF_FIXED_WHEEL_DIRECTION	0x4000
 
+/* AXES_ENABLE and DIRECTION axes */
 #define PID_AXIS_X	0
 #define PID_AXIS_Y	1
 #define PID_AXIS_Z	2
@@ -412,12 +413,6 @@ static void pidff_set_effect_report(struct pidff_device *pidff,
 	pidff->set_effect[PID_GAIN].value[0] =
 		pidff->set_effect[PID_GAIN].field->logical_maximum;
 
-	/* Use fixed direction if needed */
-	pidff->effect_direction->value[0] = pidff_rescale(
-		pidff->quirks & HID_PIDFF_QUIRK_FIX_WHEEL_DIRECTION ?
-		PIDFF_FIXED_WHEEL_DIRECTION : effect->direction,
-		U16_MAX, pidff->effect_direction);
-
 	/* Omit setting delay field if it's missing */
 	if (!(pidff->quirks & HID_PIDFF_QUIRK_MISSING_DELAY))
 		pidff_set_time(&pidff->set_effect[PID_START_DELAY],
@@ -426,8 +421,21 @@ static void pidff_set_effect_report(struct pidff_device *pidff,
 
 	/* FUN FUN */
 	// pidff->set_effect[PID_DIRECTION_ENABLE].value[0] = 1;
-	// pidff->set_effect[PID_AXES_ENABLE].value[1] = 0;
-	// pidff->set_effect[PID_AXES_ENABLE].value[2] = 0;
+
+	if (pidff->quirks & HID_PIDFF_QUIRK_FIX_WHEEL_DIRECTION)
+		effect->direction = PIDFF_FIXED_WHEEL_DIRECTION;
+
+	int i, index;
+	for (i = 0; i < sizeof(pidff_direction_axis); i++) {
+		index = pidff->direction_axis_id[i] - 1;
+
+		/* Check if axis usage was found */
+		if (index >= 0) {
+			pidff->axes_enable->value[index] = 1;
+			pidff->effect_direction->value[index] = pidff_rescale(
+				effect->direction, U16_MAX, pidff->effect_direction);
+		}
+	}
 
 	hid_hw_request(pidff->hid, pidff->reports[PID_SET_EFFECT],
 			HID_REQ_SET_REPORT);
