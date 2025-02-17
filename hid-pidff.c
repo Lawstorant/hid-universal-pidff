@@ -51,6 +51,7 @@ static const u8 pidff_reports[] = {
 
 /* PID special fields */
 #define	PID_EFFECT_TYPE			0x25
+#define PID_AXES_ENABLE			0x55
 #define	PID_DIRECTION			0x57
 #define	PID_EFFECT_OPERATION_ARRAY	0x78
 #define	PID_BLOCK_LOAD_STATUS		0x8b
@@ -118,7 +119,9 @@ static const u8 pidff_pool[] = { 0x80, 0x83, 0xa9 };
 #define PID_DISABLE_ACTUATORS	1
 #define PID_STOP_ALL_EFFECTS	2
 #define PID_RESET		3
-static const u8 pidff_device_control[] = { 0x97, 0x98, 0x99, 0x9a };
+#define PID_PAUSE		4
+#define PID_CONTINUE		5
+static const u8 pidff_device_control[] = { 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9a };
 
 #define PID_CONSTANT	0
 #define PID_RAMP	1
@@ -147,6 +150,21 @@ static const u8 pidff_effect_operation_status[] = { 0x79, 0x7b };
 
 /* Polar direction 90 degrees (North) */
 #define PIDFF_FIXED_WHEEL_DIRECTION	0x4000
+
+#define PID_AXIS_X	0
+#define PID_AXIS_Y	1
+#define PID_AXIS_Z	2
+#define PID_AXIS_RX	3
+#define PID_AXIS_RY	4
+#define PID_AXIS_RZ	5
+static const u8 pidff_direction_axis[] = {
+	HID_USAGE & HID_GD_X,
+	HID_USAGE & HID_GD_Y,
+	HID_USAGE & HID_GD_Z,
+	HID_USAGE & HID_GD_RX,
+	HID_USAGE & HID_GD_RY,
+	HID_USAGE & HID_GD_RZ
+};
 
 struct pidff_usage {
 	struct hid_field *field;
@@ -182,6 +200,7 @@ struct pidff_device {
 	/* Special fields in set_effect */
 	struct hid_field *set_effect_type;
 	struct hid_field *effect_direction;
+	struct hid_field *axes_enable;
 
 	/* Special field in device_control */
 	struct hid_field *device_control;
@@ -196,6 +215,7 @@ struct pidff_device {
 	int type_id[sizeof(pidff_effect_types)];
 	int status_id[sizeof(pidff_block_load_status)];
 	int operation_id[sizeof(pidff_effect_operation_status)];
+	int direction_axis_id[sizeof(pidff_direction_axis)];
 
 	int pid_id[PID_EFFECTS_MAX];
 
@@ -391,7 +411,6 @@ static void pidff_set_effect_report(struct pidff_device *pidff,
 			effect->trigger.interval);
 	pidff->set_effect[PID_GAIN].value[0] =
 		pidff->set_effect[PID_GAIN].field->logical_maximum;
-	pidff->set_effect[PID_DIRECTION_ENABLE].value[0] = 1;
 
 	/* Use fixed direction if needed */
 	pidff->effect_direction->value[0] = pidff_rescale(
@@ -403,6 +422,12 @@ static void pidff_set_effect_report(struct pidff_device *pidff,
 	if (!(pidff->quirks & HID_PIDFF_QUIRK_MISSING_DELAY))
 		pidff_set_time(&pidff->set_effect[PID_START_DELAY],
 				effect->replay.delay);
+
+
+	/* FUN FUN */
+	// pidff->set_effect[PID_DIRECTION_ENABLE].value[0] = 1;
+	pidff->set_effect[PID_AXES_ENABLE].value[1] = 0;
+	pidff->set_effect[PID_AXES_ENABLE].value[2] = 0;
 
 	hid_hw_request(pidff->hid, pidff->reports[PID_SET_EFFECT],
 			HID_REQ_SET_REPORT);
@@ -1133,6 +1158,10 @@ static int pidff_find_special_fields(struct pidff_device *pidff)
 	pidff->effect_direction =
 		pidff_find_special_field(pidff->reports[PID_SET_EFFECT],
 					 PID_DIRECTION, 0);
+	pidff->axes_enable =
+		pidff_find_special_field(pidff->reports[PID_SET_EFFECT],
+					 PID_AXES_ENABLE, 0);
+
 	pidff->device_control =
 		pidff_find_special_field(pidff->reports[PID_DEVICE_CONTROL],
 			PID_DEVICE_CONTROL_ARRAY,
@@ -1173,6 +1202,16 @@ static int pidff_find_special_fields(struct pidff_device *pidff)
 	}
 
 	PIDFF_FIND_SPECIAL_KEYS(control_id, device_control, device_control);
+
+	int i;
+	uint found_axes = PIDFF_FIND_SPECIAL_KEYS(direction_axis_id,
+						  axes_enable, direction_axis);
+
+	hid_dbg(pidff->hid, "Found direction axes: %d", found_axes);
+
+	for (i = 0; i < sizeof(pidff_direction_axis); i++) {
+		hid_dbg(pidff->hid, "Axis %d, id: %d", i+1, pidff->direction_axis_id[i]);
+	}
 
 	if (!PIDFF_FIND_SPECIAL_KEYS(type_id, create_new_effect_type,
 				     effect_types)) {
